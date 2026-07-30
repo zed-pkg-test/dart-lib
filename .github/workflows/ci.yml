@@ -1,0 +1,91 @@
+name: package CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ci.yml
+
+      - name: Verify Zed and pub metadata agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import tomllib
+          from pathlib import Path
+
+          with Path(".zpkg.toml").open("rb") as handle:
+              zed = tomllib.load(handle)["package"]
+
+          pubspec = Path("pubspec.yaml").read_text()
+          def field(key: str) -> str:
+              match = re.search(rf"^{key}:\s*(.+)$", pubspec, re.MULTILINE)
+              assert match, f"pubspec.yaml declares no {key}"
+              return match.group(1).strip()
+
+          assert field("version") == zed["version"], field("version")
+          assert zed["org"] == "zed-pkg-test", zed["org"]
+          assert zed["repository"]["url"] == "https://github.com/zed-pkg-test/dart-lib"
+
+          # pub names must be lowercase_with_underscores, so they cannot equal
+          # the kebab-case zed name. Pinning the exact mapping is what makes the
+          # pub-deps.yaml key bug (see README) detectable rather than folklore.
+          pub_name = field("name")
+          assert pub_name == "zed_pkg_test_dart_lib", pub_name
+          assert pub_name == f"{zed['org']}_{zed['name']}".replace("-", "_"), pub_name
+          PY
+
+      - uses: dart-lang/setup-dart@e51d8e571e22473a2ddebf0ef8a2123f0ab2c02c # v1
+        with:
+          sdk: stable
+
+      - name: Analyze and test
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze --fatal-infos
+          dart format --output=none --set-exit-if-changed .
+          dart test
+
+      - name: Audit publishable contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          # pub publish --dry-run is the same preflight zed runs for the pub.dev
+          # native route, so a failure here would also fail `zed publish`.
+          dart pub publish --dry-run 2>&1 | tee "$RUNNER_TEMP/pub-dry-run.log" || true
+          if grep -Eq '(^|/)(\.zed|\.dart_tool)/' "$RUNNER_TEMP/pub-dry-run.log"; then
+            echo "local state would be published" >&2
+            exit 1
+          fi
+
+      - name: Upload package-content diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dart-pub-dry-run
+          path: ${{ runner.temp }}/pub-dry-run.log
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,10 @@
+name: zed_pkg_test_dart_lib
+version: 1.0.0
+description: A tiny Dart package sourced via zed (complements pub.dev).
+repository: https://github.com/zed-pkg-test/dart-lib
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dev_dependencies:
+  test: ^1.25.0

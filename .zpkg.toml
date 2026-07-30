@@ -1,0 +1,10 @@
+[package]
+org = "zed-pkg-test"
+name = "dart-lib"
+version = "1.0.0"
+description = "A tiny Dart package sourced via zed (complements pub.dev)."
+license = "MIT"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/zed-pkg-test/dart-lib"
