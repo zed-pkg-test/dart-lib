@@ -1,3 +1,7 @@
 .zed/
 .dart_tool/
 pubspec.lock
+tmp
+temp
+tmp/worktrees
+temp/worktrees
